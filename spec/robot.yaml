@@ -1,0 +1,72 @@
+# Strider robot specification: the single source of truth (ADR 0001, ADR 0002).
+# Every number the sim, controllers and CAD use comes from here. SI units throughout.
+# M0 values are a sizing budget; M1 replaces masses/inertias with values exported from CAD.
+name: strider
+version: 0.1.0
+
+sim:
+  timestep: 0.002          # s, 500 Hz physics
+  control_decimation: 10   # policy/controller at 50 Hz
+  integrator: implicitfast
+  gravity: 9.81
+  cone: elliptic
+  impratio: 10
+
+ground:
+  friction: [0.8, 0.02, 0.01]   # slide, torsion, roll
+
+body:                      # trunk: box, battery + compute inside
+  size: [0.42, 0.20, 0.12] # length x width x height, m
+  mass: 5.0
+  com_offset: [0.0, 0.0, 0.0]
+
+legs:
+  # ADR 0001 leg order. Sign convention: +x forward, +y left.
+  order: [FL, FR, RL, RR]
+  hip_offset: [0.20, 0.06, 0.0]  # |x|, |y|, z of abduction axis in body frame
+  hip:
+    lateral: 0.09          # abduction axis -> thigh axis, along +-y
+    radius: 0.045          # actuator housing (cylinder)
+    length: 0.06
+    mass: 0.70
+  thigh:
+    length: 0.25
+    radius: 0.025
+    mass: 0.95             # carries the knee actuator near the hip
+  calf:
+    length: 0.25
+    radius: 0.015
+    mass: 0.20
+  foot:
+    radius: 0.022
+
+joints:
+  # ADR 0001 joint order within a leg: abduction, hip (flexion), knee.
+  names: [abd, hip, knee]
+  range:                   # rad, positive about body +x (abd) and +y (hip, knee)
+    abd: [-0.80, 0.80]
+    hip: [-1.50, 3.00]
+    knee: [-2.70, -0.60]
+  damping: 0.3             # N m s / rad (viscous, reflected)
+  frictionloss: 0.15       # N m
+  armature: 0.012          # kg m^2 reflected rotor inertia (rotor 1.5e-4 * 9^2)
+
+actuators:
+  # Quasi-direct-drive BLDC + 9:1 planetary; knee via 1.5:1 belt (M1 models these in detail).
+  torque_limit:            # N m at the joint
+    abd: 30.0
+    hip: 30.0
+    knee: 45.0
+  velocity_limit:          # rad/s at the joint, no-load
+    abd: 25.0
+    hip: 25.0
+    knee: 16.7
+
+stance:
+  # Nominal standing pose (rad), same for all legs. Gives ~0.40 m hip height.
+  abd: 0.0
+  hip: 0.67
+  knee: -1.30
+
+budget:
+  total_mass: 12.4         # kg, sum of the above; M1 must stay within 3% of this

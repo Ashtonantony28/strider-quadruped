@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+model/reference/go2/
+runs/
+*.mp4
