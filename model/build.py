@@ -122,9 +122,12 @@ def robot_mjcf(spec: dict[str, Any] | None = None) -> ET.Element:
 
 
 def scene_mjcf(spec: dict[str, Any] | None = None) -> ET.Element:
-    """Robot plus a flat floor and a light."""
+    """Robot plus a flat floor, a light and an offscreen framebuffer large enough for 1080p renders."""
     spec = spec or load_spec()
     root = robot_mjcf(spec)
+    visual = ET.Element("visual")
+    ET.SubElement(visual, "global", offwidth="1920", offheight="1080")
+    root.insert(2, visual)
     world = root.find("worldbody")
     assert world is not None
     world.insert(0, ET.Element("light", pos="0 0 3", dir="0 0 -1", directional="true"))
