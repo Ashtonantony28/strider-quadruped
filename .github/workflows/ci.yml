@@ -13,6 +13,8 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Fetch Go2 reference (pinned, checksummed; ADR 0002)
         run: python -m model.fetch_reference
+      - name: Build CAD meshes + check mass properties are current (ADR 0003)
+        run: python -m cad.build --no-step
       - name: Build Strider model from spec
         run: python -m model.build
       - name: Tests

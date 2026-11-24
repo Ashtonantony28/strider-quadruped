@@ -1,8 +1,9 @@
 # Strider robot specification: the single source of truth (ADR 0001, ADR 0002).
-# Every number the sim, controllers and CAD use comes from here. SI units throughout.
-# M0 values are a sizing budget; M1 replaces masses/inertias with values exported from CAD.
+# Every number the CAD, sim, controllers and audit use comes from here. SI units throughout.
+# Masses and inertias are NOT listed per body: they are computed from the CAD solids
+# (cad/build.py -> spec/massprops.yaml, ADR 0003). Only bought-in parts carry a catalogue mass.
 name: strider
-version: 0.1.0
+version: 0.2.0
 
 sim:
   timestep: 0.002          # s, 500 Hz physics
@@ -15,35 +16,73 @@ sim:
 ground:
   friction: [0.8, 0.02, 0.01]   # slide, torsion, roll
 
-body:                      # trunk: box, battery + compute inside
-  size: [0.42, 0.20, 0.12] # length x width x height, m
-  mass: 5.0
-  com_offset: [0.0, 0.0, 0.0]
+materials:                 # kg/m^3
+  aluminium_6061: 2700
+  carbon_fibre: 1600
+  polyurethane_rubber: 1200
+  pa12_print: 1010         # printed head cover / handle
+
+clearance:
+  joint_gap: 0.0005        # m, axial gap between parts on either side of a joint (bearing clearance)
+  attach_tol: 0.001        # m, parts of a parent/child pair must be within this (else "floating")
+
+# One actuator family for all 12 joints: QDD BLDC + 9:1 planetary, catalogue-class part.
+actuator:
+  diameter: 0.096
+  width: 0.048
+  mass: 0.50               # kg, catalogue value; inertia from geometry at uniform density
+  output_flange_diameter: 0.070
+  output_flange_thickness: 0.006
+  output_hub_diameter: 0.040
+  bolt_circle: 0.080       # m, housing face bolt circle (visual detail, 8 x M3 heads)
+  fin_count: 24            # cooling fins on the housing rim (visual + realistic surface)
+
+trunk:
+  size: [0.38, 0.23, 0.12]       # outer length x width x height, m
+  edge_fillet: {long: 0.018, end_top: 0.010, end_vertical: 0.006}  # outer radii; small at the ends so
+                                 # the abduction actuators clear the inner corner (see AUDIT-geometry)
+  wall: 0.002                    # aluminium monocoque wall
+  hub_hole_diameter: 0.045       # holes in end walls for the abduction output hubs
+  battery: {size: [0.20, 0.12, 0.045], mass: 1.50}   # Li-ion 6S pack, catalogue mass
+  compute: {size: [0.10, 0.08, 0.020], mass: 0.30}   # compute + power board stack
+  harness: {size: [0.06, 0.10, 0.030], mass: 0.35}   # power distribution + wiring loom (catalogue est.)
+  head: {size: [0.075, 0.13, 0.045], x_front: 0.17, lens_diameter: 0.022, fillet: 0.012, wall: 0.002}
+  belly_plate: {inset: [0.06, 0.04], thickness: 0.002}   # skid plate under the trunk (CF)
+  vents: {count: 4, size: [0.110, 0.005], depth: 0.001, x_center: -0.02, pitch: 0.012}   # horizontal louvres
+  handle: {span: 0.14, height: 0.04, bar_diameter: 0.016, x_center: -0.04}
 
 legs:
   # ADR 0001 leg order. Sign convention: +x forward, +y left.
   order: [FL, FR, RL, RR]
-  hip_offset: [0.20, 0.06, 0.0]  # |x|, |y|, z of abduction axis in body frame
+  # Abduction axis position in the body frame: x is the hip-flexion axis station (|x|),
+  # y is the abduction axis lateral offset, z its height.
+  hip_offset: [0.245, 0.06, 0.0]
   hip:
-    lateral: 0.09          # abduction axis -> thigh axis, along +-y
-    radius: 0.045          # actuator housing (cylinder)
-    length: 0.06
-    mass: 0.70
+    lateral: 0.09          # abduction axis -> thigh frame (hip-flexion actuator outboard face + gap)
+    plate_thickness: 0.006
+    plate_height: 0.07
   thigh:
     length: 0.25
-    radius: 0.025
-    mass: 0.95             # carries the knee actuator near the hip
+    beam_width: [0.046, 0.034]   # along x at top, at knee (tapered)
+    beam_thickness: 0.026        # along y
+    wall: 0.002                  # hollow belt housing wall
+    belt_and_pulleys_mass: 0.08  # kg, catalogue (inside the housing)
+    knee_boss_diameter: 0.050
+    bearing_bore: 0.030          # knee boss / calf hub are rings round a 30 mm bearing seat
   calf:
     length: 0.25
-    radius: 0.015
-    mass: 0.20
+
+    hub_diameter: 0.050
+    hub_width: 0.026
+    tube_diameter: [0.024, 0.018]  # outer at knee, at foot
+    tube_wall: 0.0015
   foot:
     radius: 0.022
 
 joints:
   # ADR 0001 joint order within a leg: abduction, hip (flexion), knee.
   names: [abd, hip, knee]
-  range:                   # rad, positive about body +x (abd) and +y (hip, knee)
+  range:                   # rad, positive about body +x (abd) and +y (hip, knee); see docs/AUDIT-geometry.md
     abd: [-0.80, 0.80]
     hip: [-1.50, 3.00]
     knee: [-2.70, -0.60]
@@ -52,8 +91,7 @@ joints:
   armature: 0.012          # kg m^2 reflected rotor inertia (rotor 1.5e-4 * 9^2)
 
 actuators:
-  # Quasi-direct-drive BLDC + 9:1 planetary; knee via 1.5:1 belt (M1 models these in detail).
-  torque_limit:            # N m at the joint
+  torque_limit:            # N m at the joint (knee via 1.5:1 belt)
     abd: 30.0
     hip: 30.0
     knee: 45.0
@@ -63,10 +101,11 @@ actuators:
     knee: 16.7
 
 stance:
-  # Nominal standing pose (rad), same for all legs. Gives ~0.40 m hip height.
+  # Nominal standing pose (rad), same for all legs. Gives ~0.42 m hip height.
   abd: 0.0
   hip: 0.67
   knee: -1.30
 
 budget:
-  total_mass: 12.4         # kg, sum of the above; M1 must stay within 3% of this
+  total_mass: 12.4         # kg, plan target; CAD total must stay within 3% (plan M1 exit criterion)
+  tolerance: 0.03

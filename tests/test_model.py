@@ -8,9 +8,8 @@ import mujoco
 import numpy as np
 import pytest
 
-from model import inertia
 from model.build import load_model, robot_mjcf, stance_hip_height, to_xml
-from model.spec import JOINT_NAMES, LEG_ORDER, load_spec, total_mass, validate_spec
+from model.spec import JOINT_NAMES, LEG_ORDER, load_massprops, load_spec, validate_spec
 from sim.stand import NQ_FREE, run_stand
 
 SPEC = load_spec()
@@ -21,27 +20,13 @@ def model() -> mujoco.MjModel:
     return load_model()
 
 
-# ---- primitives (analytic) ----
-
-def test_box_inertia_cube():
-    # Cube of side a: I = m a^2 / 6 about every axis.
-    assert inertia.box(6.0, 1.0, 1.0, 1.0) == pytest.approx((1.0, 1.0, 1.0))
-
-
-def test_cylinder_inertia_matches_mujoco():
-    """Our cylinder formula agrees with MuJoCo's own geom-derived inertia to 1e-9."""
-    m, r, length = 0.7, 0.045, 0.06
-    mj = mujoco.MjModel.from_xml_string(
-        f'<mujoco><worldbody><body><freejoint/><geom type="cylinder" size="{r} {length/2}" mass="{m}"/>'
-        '</body></worldbody></mujoco>')
-    ours = inertia.cylinder(m, r, length, "z")
-    assert np.allclose(sorted(mj.body_inertia[1]), sorted(ours), rtol=1e-9)
-
-
 # ---- spec ----
 
-def test_spec_mass_budget():
-    assert total_mass(SPEC) == pytest.approx(SPEC["budget"]["total_mass"])
+def test_cad_mass_within_budget():
+    """Plan M1 exit criterion: CAD-derived total mass within the budget tolerance (3%)."""
+    total = load_massprops()["_total_mass"]
+    budget = SPEC["budget"]["total_mass"]
+    assert abs(total - budget) / budget <= SPEC["budget"]["tolerance"]
 
 
 def test_spec_rejects_wrong_leg_order():
@@ -73,8 +58,31 @@ def test_model_compiles_with_spec_rates(model):
     assert model.nu == 12 and model.nq == 19 and model.nv == 18
 
 
-def test_model_mass_matches_spec(model):
-    assert float(np.sum(model.body_mass)) == pytest.approx(SPEC["budget"]["total_mass"], rel=1e-9)
+def test_model_mass_properties_come_from_cad(model):
+    mp = load_massprops()
+    assert float(np.sum(model.body_mass)) == pytest.approx(mp["_total_mass"], rel=1e-6)
+    for b in range(1, model.nbody):
+        assert model.body_mass[b] == pytest.approx(mp[model.body(b).name]["mass"], rel=1e-9)
+
+
+def test_self_collision_enabled_between_robot_geoms(model):
+    """Robot collision geoms collide with each other (non-adjacent bodies) and with the floor."""
+    floor = model.geom("floor").id
+    for g in range(model.ngeom):
+        if g == floor:
+            continue
+        ct, ca = model.geom_contype[g], model.geom_conaffinity[g]
+        assert ct & 2 and ca & 2, model.geom(g).name               # robot <-> robot
+        assert ca & model.geom_contype[floor], model.geom(g).name  # robot <-> world
+
+
+def test_home_pose_has_no_self_contact(model):
+    d = mujoco.MjData(model)
+    mujoco.mj_resetDataKeyframe(model, d, model.key("home").id)
+    mujoco.mj_forward(model, d)
+    floor = model.geom("floor").id
+    robot_pairs = [(c.geom1, c.geom2) for c in d.contact[:d.ncon] if floor not in (c.geom1, c.geom2)]
+    assert robot_pairs == []
 
 
 def test_joint_and_actuator_order_follow_adr_0001(model):
