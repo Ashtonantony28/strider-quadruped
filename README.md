@@ -13,6 +13,14 @@ Full plan: [docs/PLAN.md](docs/PLAN.md).
 | M1 | build123d CAD, mass properties from CAD, geometry audit | CAD + audit done; actuator models next |
 | M2-M9 | CPG, EKF, MPC, RL, stairs, sim-to-sim, Vortex-V HIL, replay | planned |
 
+## Demo
+
+![Strider in MuJoCo: drop test and PD-held poses](docs/media/strider-demo.gif)
+
+*The CAD-meshed 12.4 kg model in MuJoCo. It is dropped from 15 cm, then driven through crouch, stand and paw-raise poses by the joint PD hold from `sim/stand.py`. This is physics **simulation** with spec actuator limits. There is no gait or balance controller yet (M2+), which is why it tips onto three legs when a paw comes up. Regenerate it with `MUJOCO_GL=egl python -m viz.demo_video`. [MP4](docs/media/strider-demo.mp4)*
+
+<img src="docs/media/strider-hero.png" width="640" alt="Strider hero render">
+
 ## Quick start
 
 ```bash
